@@ -1,9 +1,19 @@
 token = ''  
 channelId = ''                 
-serverId = ''         
+serverId = ''  
 
 rollCommand= 'wa'
 desiredKakeras = ['kakeraP','kakeraY','kakeraO','kakeraR','kakeraW','kakeraL']
-desiredSeries = ['One Piece','Dragon Ball Z','Death Note']
+# 'all' for all messages on channel or 'self' for only your own rolls
+desiredKakerasMode = 'all' 
+desiredSeries = []
+desiredSeriesMode = 'all'
+minCardPower = 150
+minCardPowerMode = 'self'
+marryLastRoll = True
+divorceLastRoll = True
 pokeRoll = True
-repeatMinute = '25'
+claimDk = True
+repeatMinute = '06'
+repeatBetween = '20'
+runImmediately = False

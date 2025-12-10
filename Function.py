@@ -3,6 +3,7 @@ import json
 import time
 import requests
 import Vars
+from datetime import datetime
 from icecream import ic
 from discum.utils.slash import SlashCommander
 
@@ -26,6 +27,7 @@ def checkUserStatus():
         'timeUntilMarry': None,
         'rollsRemaining': 0,
         'timeInMinutes': None,
+        'timeUntilReset': None,
         'canGetDk': False
     }
     
@@ -38,9 +40,21 @@ def checkUserStatus():
             
             nextResetMatch = re.search(r'A próxima reinicialização é em \*\*((?:\d+h )?\d+)\*\* min', content)
             if nextResetMatch:
-                userInfo['timeUntilMarry'] = nextResetMatch.group(1) + 'min'
+                timeStr = nextResetMatch.group(1)
+                userInfo['timeUntilMarry'] = timeStr + 'min'
+                
+                timeMatch = re.search(r'(\d+)h (\d+)', timeStr)
+                if timeMatch:
+                    hours = int(timeMatch.group(1))
+                    minutes = int(timeMatch.group(2))
+                    userInfo['timeUntilReset'] = hours * 60 + minutes
+                else:
+                    minutesOnly = re.search(r'(\d+)', timeStr)
+                    if minutesOnly:
+                        userInfo['timeUntilReset'] = int(minutesOnly.group(1))
             else:
                 userInfo['timeUntilMarry'] = '0min'
+                userInfo['timeUntilReset'] = 0
             userInfo['timeInMinutes'] = 0
         else:
             marryMatch = re.search(r'antes que você possa se casar novamente \*\*((?:\d+h )?\d+)\*\* min', content)
@@ -76,7 +90,10 @@ def checkUserStatus():
     
     return userInfo
 
-def shouldClaim(cardSeries, cardPower, isScheduleActive):
+def shouldClaim(cardName, cardSeries, cardPower, isScheduleActive):
+    if cardName in Vars.wishlist:
+        if Vars.wishlistMode == 'all' or isScheduleActive:
+            return True
     if cardSeries in Vars.desiredSeries:
         if Vars.desiredSeriesMode == 'all' or isScheduleActive:
             return True
@@ -113,7 +130,7 @@ def processCard(jsonCard, isScheduleActive):
     
     if not 'footer' in jsonCard['embeds'][0] or not 'icon_url' in jsonCard['embeds'][0]['footer']:
         print(unclaimed+' ---- ',cardInfo['power'],' - '+cardInfo['name']+' - '+cardInfo['series'])
-        if shouldClaim(cardInfo['series'], cardInfo['power'], isScheduleActive):
+        if shouldClaim(cardInfo['name'], cardInfo['series'], cardInfo['power'], isScheduleActive):
             cardInfo['wasClaimed'] = claimCard(cardInfo['name'], cardInfo['idMessage'])
     else:
         cardInfo['isAlreadyClaimed'] = True
@@ -135,6 +152,20 @@ def processCard(jsonCard, isScheduleActive):
     return cardInfo
 
 def simpleRoll():
+    if Vars.snooze:
+        currentHour = datetime.now().hour
+        snoozeBegin = int(Vars.snoozeBegin)
+        snoozeEnd = int(Vars.snoozeEnd)
+        
+        if snoozeBegin < snoozeEnd:
+            inSnoozeTime = snoozeBegin <= currentHour < snoozeEnd
+        else:
+            inSnoozeTime = currentHour >= snoozeBegin or currentHour < snoozeEnd
+        
+        if inSnoozeTime:
+            print(f'Snooze ativo: {currentHour:02d}h está entre {snoozeBegin:02d}h e {snoozeEnd:02d}h. Ignorando execução.')
+            return
+    
     print(time.strftime("Rolling at %H:%M - %d/%m/%y", time.localtime()))
     
     userStatus = checkUserStatus()
@@ -153,7 +184,7 @@ def simpleRoll():
     
     canUseMarryFeature = False
     if Vars.marryLastRoll:
-        if userStatus['timeInMinutes'] is not None and userStatus['timeInMinutes'] < 60:
+        if userStatus['canMarryNow'] and userStatus['timeUntilReset'] is not None and userStatus['timeUntilReset'] < 60:
             canUseMarryFeature = True
             print(f'marryLastRoll: ATIVO - Casará no último roll se nenhum for claimado')
             if Vars.divorceLastRoll:
@@ -161,39 +192,58 @@ def simpleRoll():
         else:
             print(f'marryLastRoll: INATIVO - Tempo até casar deve ser menor que 1h (atual: {userStatus["timeUntilMarry"]})')
     
-    i = 1
+    i = 0
     rollCommand = SlashCommander(bot.getSlashCommands(botID).json()).get([Vars.rollCommand])
     cardsRolled = []
     anyClaimed = False
     maxRolls = userStatus['rollsRemaining']
+    errorCount = 0
+    maxErrors = 3
 
-    while i <= maxRolls:
+    while i < maxRolls:
         bot.triggerSlashCommand(botID, Vars.channelId, Vars.serverId, data=rollCommand)
         time.sleep(1.8)
         r = requests.get(url, headers=auth)
         jsonCard = json.loads(r.text)
 
         if len(jsonCard[0]['content']) != 0:
-            print(f'Mensagem inválida detectada, tentando novamente...')
+            errorCount += 1
+            print(f'Mensagem inválida detectada (erro {errorCount}/{maxErrors}), verificando status...')
+            
+            if errorCount >= maxErrors:
+                print('Limite de erros atingido. Encerrando execução.')
+                return
+            
+            userStatus = checkUserStatus()
+            if userStatus['rollsRemaining'] == 0:
+                print('Nenhum roll disponível após verificação. Encerrando.')
+                return
+            
+            maxRolls = userStatus['rollsRemaining'] - i
             continue
         
+        i += 1
         print(i, ' - ', end='')
         cardInfo = processCard(jsonCard[0], isScheduleActive=True)
-        cardsRolled.append(cardInfo)
+        
+        if canUseMarryFeature:
+            cardsRolled.append(cardInfo)
         
         if cardInfo['wasClaimed']:
             anyClaimed = True
         
     if canUseMarryFeature and not anyClaimed and len(cardsRolled) > 0:
-        lastCard = cardsRolled[-1]
-        if not lastCard['isAlreadyClaimed'] and lastCard['name'] != 'null':
-            print(f'\nAplicando marryLastRoll: {lastCard["name"]}')
-            claimSuccess = claimCard(lastCard['name'], lastCard['idMessage'])
+        validCards = [card for card in cardsRolled if not card['isAlreadyClaimed'] and card['name'] != 'null']
+        
+        if validCards:
+            highestPowerCard = max(validCards, key=lambda card: card['power'])
+            print(f'\nAplicando marryLastRoll: {highestPowerCard["name"]} (Power: {highestPowerCard["power"]})')
+            claimSuccess = claimCard(highestPowerCard['name'], highestPowerCard['idMessage'])
             
             if claimSuccess and Vars.divorceLastRoll:
-                print(f'Divorciando {lastCard["name"]}...')
+                print(f'Divorciando {highestPowerCard["name"]}...')
                 time.sleep(2)
-                requests.post(url=url, headers=auth, data={'content': f'$divorce {lastCard["name"]}'}) 
+                requests.post(url=url, headers=auth, data={'content': f'$divorce {highestPowerCard["name"]}'}) 
                 time.sleep(2)
                 requests.post(url=url, headers=auth, data={'content': 'y'})
                 print('Divorce completo.')

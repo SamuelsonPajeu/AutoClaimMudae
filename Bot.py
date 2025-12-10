@@ -30,6 +30,7 @@ print('='*50)
 ic(Vars.desiredSeriesMode)
 ic(Vars.minCardPowerMode)
 ic(Vars.desiredKakerasMode)
+ic(Vars.wishlistMode)
 
 if Vars.repeatBetween:
     print(f'Execução aleatória: entre XX:{Vars.repeatMinute} e XX:{Vars.repeatBetween}')

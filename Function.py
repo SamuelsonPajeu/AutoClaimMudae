@@ -13,7 +13,7 @@ auth = {'authorization' : Vars.token}
 bot = discum.Client(token = Vars.token, log=False)
 url = (f'https://discord.com/api/v8/channels/{Vars.channelId}/messages')
 myUserID = Vars.userId
-emoji = '👍'
+emoji = '✅'
 
 def checkUserStatus():
     import re
@@ -159,6 +159,8 @@ def processCard(jsonCard, isScheduleActive, rollUserId=None):
             components = jsonCard['components'][0]['components']
             for index in range(len(components)):
                 try:
+                    if cardInfo['isAlreadyClaimed']:
+                        print(f'Has kakera: {cardsKakera}')
                     if cardsKakera in Vars.desiredKakeras:
                         print(kakera+' - '+kakera+' - Trying to react to '+ cardsKakera+ ' of '+ cardInfo['name'])
                         bot.click(jsonCard['author']['id'], channelID=jsonCard['channel_id'], guildID=Vars.serverId, messageID=jsonCard['id'], messageFlags=jsonCard['flags'], data={'component_type': 2, 'custom_id': components[index]['custom_id']})

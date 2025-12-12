@@ -4,12 +4,22 @@ import schedule
 import threading
 import random
 from Function import simpleRoll, watchMessages
-from icecream import ic
+from i18n import get_text
+
+# Optional icecream import for debugging
+try:
+    from icecream import ic
+except ImportError:
+    # Fallback to print if icecream is not installed
+    ic = lambda *args: print(*args) if args else None
 
 nextMinute = None
 
+lang = Vars.language
+
 def scheduleNextRoll():
     global nextMinute
+    lang = Vars.language
     schedule.clear()
     
     if Vars.repeatBetween:
@@ -22,10 +32,11 @@ def scheduleNextRoll():
         timeString = ':' + Vars.repeatMinute
     
     schedule.every().hour.at(timeString).do(lambda: [simpleRoll(), scheduleNextRoll()])
+    print(get_text('log_next_execution', lang, minute=nextMinute))
     return nextMinute
 
 print('='*50)
-print('Bot iniciado')
+print(get_text('log_bot_started', lang))
 print('='*50)
 ic(Vars.desiredSeriesMode)
 ic(Vars.minCardPowerMode)
@@ -33,23 +44,19 @@ ic(Vars.desiredKakerasMode)
 ic(Vars.wishlistMode)
 
 if Vars.repeatBetween:
-    print(f'Execução aleatória: entre XX:{Vars.repeatMinute} e XX:{Vars.repeatBetween}')
+    print(get_text('log_random_execution', lang, min=Vars.repeatMinute, max=Vars.repeatBetween))
 else:
-    print(f'Execução fixa: a cada hora no minuto {Vars.repeatMinute}')
+    print(get_text('log_fixed_execution', lang, min=Vars.repeatMinute))
 
 print('='*50)
 
 if Vars.runImmediately:
     simpleRoll()
 
-scheduledMinute = scheduleNextRoll()
-print(f'Próxima execução agendada para: XX:{scheduledMinute:02d}')
+scheduleNextRoll()
 
 watchThread = threading.Thread(target=watchMessages, daemon=True)
 watchThread.start()
-
-print('Monitoramento de mensagens ativo')
-print('Aguardando próxima execução...\n')
 
 while True:
     schedule.run_pending()

@@ -3,10 +3,14 @@ import json
 import time
 import requests
 import Vars
-import base64
 from datetime import datetime
-from icecream import ic
 from discum.utils.slash import SlashCommander
+from i18n import get_text
+
+try:
+    from icecream import ic
+except ImportError:
+    ic = lambda *args: print(*args) if args else None
 
 botID = '432610292342587392' 
 auth = {'authorization' : Vars.token}
@@ -17,7 +21,8 @@ emoji = '✅'
 
 def checkUserStatus():
     import re
-    print('Verificando status do usuário...')
+    lang = Vars.language
+    print(get_text('log_checking_status', lang))
     requests.post(url=url, headers=auth, data={'content': '$tu'})
     time.sleep(2)
     
@@ -44,10 +49,10 @@ def checkUserStatus():
         content = botResponse.get('content', '')
         ic(content)
         
-        if 'você __pode__ se casar agora mesmo' in content or 'você pode se casar agora mesmo' in content.lower():
+        if get_text('check_can_marry', lang) in content:
             userInfo['canMarryNow'] = True
             
-            nextResetMatch = re.search(r'A próxima reinicialização é em \*\*((?:\d+h )?\d+)\*\* min', content)
+            nextResetMatch = re.search(get_text('check_next_reset', lang), content)
             if nextResetMatch:
                 timeStr = nextResetMatch.group(1)
                 userInfo['timeUntilMarry'] = timeStr + 'min'
@@ -66,7 +71,7 @@ def checkUserStatus():
                 userInfo['timeUntilReset'] = 0
             userInfo['timeInMinutes'] = 0
         else:
-            marryMatch = re.search(r'antes que você possa se casar novamente \*\*((?:\d+h )?\d+)\*\* min', content)
+            marryMatch = re.search(get_text('check_marry_cooldown', lang), content)
             if marryMatch:
                 timeStr = marryMatch.group(1)
                 userInfo['timeUntilMarry'] = timeStr + 'min'
@@ -81,20 +86,20 @@ def checkUserStatus():
                     if minutesOnly:
                         userInfo['timeInMinutes'] = int(minutesOnly.group(1))
         
-        rollsMatch = re.search(r'Você tem \*\*(\d+)\*\* rolls restantes', content)
+        rollsMatch = re.search(get_text('check_rolls_remaining', lang), content)
         if rollsMatch:
             userInfo['rollsRemaining'] = int(rollsMatch.group(1))
         
-        if '$dk está pronto!' in content:
+        if get_text('check_dk_ready', lang) in content:
             userInfo['canGetDk'] = True
-        elif 'O próximo $dk em' in content:
+        elif get_text('check_dk_cooldown', lang) in content:
             userInfo['canGetDk'] = False
     
     print('='*50)
-    print(f'Pode se casar agora: {userInfo["canMarryNow"]}')
-    print(f'Tempo até casar: {userInfo["timeUntilMarry"]}')
-    print(f'Rolls restantes: {userInfo["rollsRemaining"]}')
-    print(f'$dk disponível: {userInfo["canGetDk"]}')
+    print(f'{get_text("log_can_marry_now", lang)}: {userInfo["canMarryNow"]}')
+    print(f'{get_text("log_time_until_marry", lang)}: {userInfo["timeUntilMarry"]}')
+    print(f'{get_text("log_rolls_remaining", lang)}: {userInfo["rollsRemaining"]}')
+    print(f'{get_text("log_dk_available", lang)}: {userInfo["canGetDk"]}')
     print('='*50)
     
     return userInfo
@@ -112,7 +117,8 @@ def shouldClaim(cardName, cardSeries, cardPower, isScheduleActive):
     return False
 
 def claimCard(cardName, idMessage):
-    print('Trying to Claim '+ cardName)
+    lang = Vars.language
+    print(f'{get_text("log_trying_claim", lang)} {cardName}')
     response = requests.put(f'https://discord.com/api/v8/channels/{Vars.channelId}/messages/{idMessage}/reactions/{emoji}/%40me', headers=auth)
     return response.status_code == 204
 
@@ -138,13 +144,14 @@ def processCard(jsonCard, isScheduleActive, rollUserId=None):
         pass
     
     if not 'footer' in jsonCard['embeds'][0] or not 'icon_url' in jsonCard['embeds'][0]['footer']:
+        lang = Vars.language
         print(unclaimed+' ---- ',cardInfo['power'],' - '+cardInfo['name']+' - '+cardInfo['series'])
         if shouldClaim(cardInfo['name'], cardInfo['series'], cardInfo['power'], isScheduleActive):
             isOwnRoll = isScheduleActive or (rollUserId is not None and rollUserId == myUserID)
             
             if not isOwnRoll:
-                print(f'Zé povinho aqui não ✋🚫, anti roubo ativado')
-                print(f'Esposa(o) de alguém detectada(o). Esperando ficar solteira 😋...')
+                print(get_text('log_anti_steal', lang))
+                print(get_text('log_waiting_single', lang))
                 time.sleep(8)
 
             time.sleep(2)
@@ -155,14 +162,15 @@ def processCard(jsonCard, isScheduleActive, rollUserId=None):
     
     if jsonCard['components'] and len(jsonCard['components']) > 0 and jsonCard['components'][0].get('components'):
         if Vars.desiredKakerasMode == 'all' or isScheduleActive:
+            lang = Vars.language
             cardsKakera = jsonCard['components'][0]['components'][0]['emoji']['name']
             components = jsonCard['components'][0]['components']
             for index in range(len(components)):
                 try:
                     if cardInfo['isAlreadyClaimed']:
-                        print(f'Has kakera: {cardsKakera}')
+                        print(f'{get_text("log_has_kakera", lang)}: {cardsKakera}')
                     if cardsKakera in Vars.desiredKakeras:
-                        print(kakera+' - '+kakera+' - Trying to react to '+ cardsKakera+ ' of '+ cardInfo['name'])
+                        print(f'{kakera} - {kakera} - {get_text("log_trying_react_kakera", lang)} {cardsKakera} {get_text("log_kakera_of", lang)} {cardInfo["name"]}')
                         bot.click(jsonCard['author']['id'], channelID=jsonCard['channel_id'], guildID=Vars.serverId, messageID=jsonCard['id'], messageFlags=jsonCard['flags'], data={'component_type': 2, 'custom_id': components[index]['custom_id']})
                         time.sleep(0.5)
                 except IndexError:
@@ -171,6 +179,7 @@ def processCard(jsonCard, isScheduleActive, rollUserId=None):
     return cardInfo
 
 def simpleRoll():
+    lang = Vars.language
     if Vars.snooze:
         currentHour = datetime.now().hour
         snoozeBegin = int(Vars.snoozeBegin)
@@ -182,34 +191,34 @@ def simpleRoll():
             inSnoozeTime = currentHour >= snoozeBegin or currentHour < snoozeEnd
         
         if inSnoozeTime:
-            print(f'Snooze ativo: {currentHour:02d}h está entre {snoozeBegin:02d}h e {snoozeEnd:02d}h. Ignorando execução.')
+            print(get_text('log_snooze_active', lang, hour=currentHour, begin=snoozeBegin, end=snoozeEnd))
             return
     
-    print(time.strftime("Rolling at %H:%M - %d/%m/%y", time.localtime()))
+    print(f'{get_text("log_rolling_at", lang)} {time.strftime("%H:%M - %d/%m/%y", time.localtime())}')
     
     userStatus = checkUserStatus()
     
     if userStatus['rollsRemaining'] == 0:
-        print('Nenhum roll disponível. Pulando execução.')
+        print(get_text('log_no_rolls', lang))
         return
     
     if Vars.claimDk and userStatus['canGetDk']:
-        print('$dk disponível! Executando claim...')
+        print(get_text('log_dk_available_exec', lang))
         requests.post(url=url, headers=auth, data={'content': '$dk'})
         time.sleep(3)
         requests.post(url=url, headers=auth, data={'content': '$daily'})
-        print('$dk e $daily executados.')
+        print(get_text('log_dk_daily_done', lang))
         time.sleep(2)
     
     canUseMarryFeature = False
     if Vars.marryLastRoll:
         if userStatus['canMarryNow'] and userStatus['timeUntilReset'] is not None and userStatus['timeUntilReset'] < 60:
             canUseMarryFeature = True
-            print(f'marryLastRoll: ATIVO - Casará no último roll se nenhum for claimado')
+            print(get_text('log_marry_active', lang))
             if Vars.divorceLastRoll:
-                print(f'divorceLastRoll: ATIVO - Divorciará após casar')
+                print(get_text('log_divorce_active', lang))
         else:
-            print(f'marryLastRoll: INATIVO - Tempo até casar deve ser menor que 1h (atual: {userStatus["timeUntilMarry"]})')
+            print(get_text('log_marry_inactive', lang, time=userStatus['timeUntilMarry']))
     
     i = 0
     rollCommand = SlashCommander(bot.getSlashCommands(botID).json()).get([Vars.rollCommand])
@@ -227,15 +236,15 @@ def simpleRoll():
 
         if len(jsonCard[0]['content']) != 0:
             errorCount += 1
-            print(f'Mensagem inválida detectada (erro {errorCount}/{maxErrors}), verificando status...')
+            print(get_text('log_invalid_message', lang, count=errorCount, max=maxErrors))
             
             if errorCount >= maxErrors:
-                print('Limite de erros atingido.')
+                print(get_text('log_error_limit', lang))
                 break
             
             userStatus = checkUserStatus()
             if userStatus['rollsRemaining'] == 0:
-                print('Nenhum roll disponível após verificação.')
+                print(get_text('log_no_rolls_after_check', lang))
                 break
             
             maxRolls = i + userStatus['rollsRemaining']
@@ -256,21 +265,21 @@ def simpleRoll():
         
         if validCards:
             highestPowerCard = max(validCards, key=lambda card: card['power'])
-            print(f'\nAplicando marryLastRoll: {highestPowerCard["name"]} (Power: {highestPowerCard["power"]})')
+            print(f'\n{get_text("log_applying_marry", lang, name=highestPowerCard["name"], power=highestPowerCard["power"])}')
             claimSuccess = claimCard(highestPowerCard['name'], highestPowerCard['idMessage'])
             
             if claimSuccess and Vars.divorceLastRoll:
-                print(f'Divorciando {highestPowerCard["name"]}...')
+                print(get_text('log_divorcing', lang, name=highestPowerCard['name']))
                 time.sleep(2)
                 requests.post(url=url, headers=auth, data={'content': f'$divorce {highestPowerCard["name"]}'}) 
                 time.sleep(2)
                 requests.post(url=url, headers=auth, data={'content': 'y'})
-                print('Divorce completo.')
+                print(get_text('log_divorce_complete', lang))
     
-    print('Rolling ended')
+    print(get_text('log_rolling_ended', lang))
 
     if Vars.pokeRoll:
-        print('\nTrying to roll Pokeslot')
+        print(f'\n{get_text("log_trying_pokeslot", lang)}')
         requests.post(url=url, headers=auth, data={'content': '$p'})
 
 def watchMessages():
